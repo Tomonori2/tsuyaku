@@ -311,7 +311,7 @@ const LANGS = {
 };
 
 /* ================== 基本 ================== */
-const VERSION = 'v1.2';
+const VERSION = 'v1.3';
 const MODEL = 'gemini-2.5-flash-lite';
 const K_KEY = 'tsuyaku_apikey';
 const K_OPT = 'tsuyaku_opts';
@@ -782,7 +782,23 @@ el('addPhrase').onclick = async () => {
   }
   if (getOpts().wake) keepAwake(true);
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
+    // updateViaCache:'none' ＝ sw.js自体を保存版で済ませない
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => {});
+    // 新しい版に入れ替わったら、1回だけ自動で読み込み直す
+    let reloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (reloaded) return;
+      reloaded = true;
+      location.reload();
+    });
+    // アプリを開き直すたびに、新しい版が出ていないか見に行く
+    const checkUpdate = () => {
+      navigator.serviceWorker.getRegistration().then(r => { if (r) r.update(); }).catch(() => {});
+    };
+    checkUpdate();
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') checkUpdate();
+    });
   }
 })();
 </script>
