@@ -1,13 +1,15 @@
-/* ふたり通訳 サービスワーカー（アプリを裏で支える小さなプログラム）
+/* 高坂先生の通訳 サービスワーカー（アプリを裏で支える小さなプログラム）
    役割：アプリ本体をスマホに保存して、次回から一瞬で開けるようにする。
    注意：翻訳はインターネットが要るので、そこは保存しない。 */
 
-const CACHE = 'tsuyaku-v1.1';
+const CACHE = 'tsuyaku-v1.2';
 const FILES = [
   './',
   './index.html',
   './manifest.json',
-  './icon.svg'
+  './icon-192.png',
+  './icon-512.png',
+  './icon-maskable.png'
 ];
 
 self.addEventListener('install', e => {
