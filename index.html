@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0f172a">
+<title>ふたり通訳｜日本語⇔ベトナム語・タイ語</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; height: 100%; overflow: hidden;
+    font-family: system-ui, -apple-system, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
+    background: #0f172a; color: #fff;
+    overscroll-behavior: none;
+  }
+  body { display: flex; flex-direction: column; }
+
+  /* ===== 上下2分割。上（相手の言語）は180度回転 ===== */
+  .side {
+    flex: 1 1 50%;
+    display: flex; flex-direction: column;
+    padding: 10px 12px;
+    min-height: 0;
+    position: relative;
+    transition: background .25s;
+  }
+  .side.foreign { transform: rotate(180deg); background: #14532d; }
+  .side.ja { background: #1e3a8a; }
+  .side.active { box-shadow: inset 0 0 0 4px #facc15; }
+
+  .label {
+    font-size: 12px; opacity: .85; letter-spacing: .03em;
+    display: flex; justify-content: space-between; align-items: center;
+    flex: 0 0 auto;
+  }
+  .bubble {
+    flex: 1 1 auto; min-height: 0; overflow-y: auto;
+    display: flex; flex-direction: column; justify-content: center;
+    padding: 6px 0;
+  }
+  .heard { font-size: 15px; opacity: .65; margin-bottom: 6px; word-break: break-word; }
+  .shown { font-size: clamp(20px, 6vw, 34px); font-weight: 700; line-height: 1.4; word-break: break-word; }
+  .shown.waiting { opacity: .35; font-weight: 400; font-size: 18px; }
+
+  .row { flex: 0 0 auto; display: flex; gap: 8px; align-items: center; }
+  .mic {
+    flex: 1 1 auto; height: 62px; border: none; border-radius: 14px;
+    background: rgba(255,255,255,.16); color: #fff;
+    font-size: 17px; font-weight: 700; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+  }
+  .mic:active { background: rgba(255,255,255,.3); }
+  .mic.on { background: #dc2626; animation: pulse 1.2s infinite; }
+  @keyframes pulse { 50% { opacity: .6; } }
+  .sub {
+    flex: 0 0 auto; width: 58px; height: 62px; border: none; border-radius: 14px;
+    background: rgba(255,255,255,.12); color: #fff; font-size: 21px; cursor: pointer;
+  }
+  .sub:active { background: rgba(255,255,255,.28); }
+
+  /* ===== 中央のバー ===== */
+  .bar {
+    flex: 0 0 auto; height: 48px; background: #0f172a;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 8px; font-size: 12px; gap: 6px;
+  }
+  .bar button {
+    background: #334155; color: #fff; border: none; border-radius: 8px;
+    padding: 8px 10px; font-size: 13px; cursor: pointer; white-space: nowrap;
+  }
+  .bar button:active { background: #475569; }
+  #btnLang { background: #0369a1; font-weight: 700; }
+  #status { flex: 1 1 auto; text-align: center; opacity: .8; font-size: 11.5px;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ver { opacity: .4; font-size: 10px; }
+
+  /* ===== パネル ===== */
+  .panel {
+    position: fixed; inset: 0; background: #f8fafc; color: #0f172a;
+    z-index: 50; overflow-y: auto; padding: 16px; display: none;
+  }
+  .panel.open { display: block; }
+  .panel h2 { margin: 0 0 4px; font-size: 19px; }
+  .panel h3 { margin: 22px 0 8px; font-size: 15px; color: #334155; }
+  .panel p { font-size: 14px; line-height: 1.7; margin: 6px 0; }
+  .panel input[type=text], .panel input[type=password], .panel select {
+    width: 100%; padding: 11px; font-size: 16px; border: 1px solid #cbd5e1;
+    border-radius: 9px; background: #fff; color: #0f172a;
+  }
+  .panel label { display: block; font-size: 13px; font-weight: 700; margin: 12px 0 5px; }
+  .panel .btn {
+    display: inline-block; padding: 11px 16px; border: none; border-radius: 9px;
+    background: #2563eb; color: #fff; font-size: 15px; font-weight: 700; cursor: pointer;
+  }
+  .panel .btn.gray { background: #64748b; }
+  .panel .btn.red { background: #dc2626; }
+  .panel .close {
+    position: sticky; top: 0; float: right; background: #e2e8f0; color: #0f172a;
+    border: none; border-radius: 8px; padding: 8px 14px; font-size: 15px; cursor: pointer;
+  }
+  .note {
+    background: #fef3c7; border-left: 4px solid #f59e0b;
+    padding: 10px 12px; font-size: 13px; line-height: 1.65; border-radius: 0 8px 8px 0; margin: 10px 0;
+  }
+  .ok { background: #dcfce7; border-left-color: #16a34a; }
+  .ng { background: #fee2e2; border-left-color: #dc2626; }
+  .toggle { display: flex; align-items: center; gap: 10px; font-size: 14px; margin: 12px 0; }
+  .toggle input { width: 20px; height: 20px; }
+
+  /* 言語えらび */
+  .langbtn {
+    display: flex; align-items: center; gap: 12px; width: 100%;
+    background: #fff; border: 2px solid #e2e8f0; border-radius: 12px;
+    padding: 14px; margin-bottom: 10px; font-size: 17px; cursor: pointer; text-align: left;
+    color: #0f172a;
+  }
+  .langbtn.sel { border-color: #2563eb; background: #eff6ff; }
+  .langbtn .fl { font-size: 26px; }
+  .langbtn .nm { font-weight: 700; }
+  .langbtn .nt { font-size: 13px; color: #64748b; }
+  .langbtn .vc { margin-left: auto; font-size: 12px; }
+
+  .plist { list-style: none; padding: 0; margin: 8px 0; }
+  .plist li {
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 10px;
+    padding: 10px 12px; margin-bottom: 8px; display: flex; gap: 10px; align-items: center;
+  }
+  .plist .txt { flex: 1 1 auto; min-width: 0; }
+  .plist .p-ja { font-size: 15px; font-weight: 700; }
+  .plist .p-fo { font-size: 14px; color: #475569; word-break: break-word; }
+  .plist button {
+    flex: 0 0 auto; border: none; border-radius: 8px; padding: 9px 12px;
+    font-size: 14px; cursor: pointer; background: #16a34a; color: #fff;
+  }
+  .plist button.del { background: #e2e8f0; color: #475569; }
+
+  .log { font-size: 13px; line-height: 1.6; }
+  .log div { padding: 8px 0; border-bottom: 1px solid #e2e8f0; }
+  .log .l { font-size: 11px; color: #64748b; }
+</style>
+</head>
+<body>
+
+<!-- ===== 上：相手の言語（180度回転） ===== -->
+<div class="side foreign" id="sideFo">
+  <div class="label"><span id="foTitle">🇻🇳 Tiếng Việt</span><span id="foVoiceWarn"></span></div>
+  <div class="bubble">
+    <div class="heard" id="foHeard"></div>
+    <div class="shown waiting" id="foShown"></div>
+  </div>
+  <div class="row">
+    <button class="mic" id="foMic"></button>
+    <button class="sub" id="foReplay" title="もう一度">🔊</button>
+  </div>
+</div>
+
+<!-- ===== 中央バー ===== -->
+<div class="bar">
+  <button id="btnLang">🌐 <span id="langName">ベトナム語</span></button>
+  <div id="status">準備中…</div>
+  <button id="btnSet">設定</button>
+</div>
+
+<!-- ===== 下：日本語 ===== -->
+<div class="side ja" id="sideJa">
+  <div class="label"><span>🇯🇵 日本語</span><span class="ver" id="ver"></span></div>
+  <div class="bubble">
+    <div class="heard" id="jaHeard"></div>
+    <div class="shown waiting" id="jaShown">マイクを押して話してください</div>
+  </div>
+  <div class="row">
+    <button class="mic" id="jaMic">🎤 日本語で話す</button>
+    <button class="sub" id="jaReplay" title="もう一度聞く">🔊</button>
+    <button class="sub" id="jaPhrase" title="定型文">💬</button>
+  </div>
+</div>
+
+<!-- ===== 言語えらびパネル ===== -->
+<div class="panel" id="panelLang">
+  <button class="close" data-close>閉じる</button>
+  <h2>相手の言語をえらぶ</h2>
+  <p style="font-size:13px;color:#64748b">上半分がこの言語になります。日本語は下で固定です。</p>
+  <div id="langList"></div>
+  <div class="note">
+    右の表示は、この端末に<b>読み上げの声が入っているか</b>です。<br>
+    🔊 = 声が出ます　🔇 = 文字は出ますが声は出ません
+  </div>
+</div>
+
+<!-- ===== 設定パネル ===== -->
+<div class="panel" id="panelSet">
+  <button class="close" data-close>閉じる</button>
+  <h2>設定</h2>
+
+  <h3>1. Gemini APIキー</h3>
+  <p>翻訳にGoogleのGeminiを使います。キーはこのスマホの中だけに保存され、どこにも送られません。</p>
+  <label for="apiKey">APIキー</label>
+  <input type="password" id="apiKey" placeholder="AIza... から始まる文字列" autocomplete="off">
+  <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
+    <button class="btn" id="saveKey">保存する</button>
+    <button class="btn gray" id="testKey">つながるか試す</button>
+  </div>
+  <p style="font-size:13px;color:#64748b">キーは <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a> から無料で取れます。</p>
+
+  <h3>2. 読み上げの声（重要）</h3>
+  <div id="voiceBox" class="note">確認中…</div>
+  <button class="btn gray" id="testVoice">今の言語の声を試す</button>
+  <p style="font-size:13px;color:#64748b">
+    声が出ないときは、スマホの「設定 → システム → 言語と入力 → 音声出力（テキスト読み上げ）→ Google音声サービス → 言語のインストール」から
+    その言語を入れてください。ここが入っていないと、翻訳はできても読み上げができません。
+  </p>
+
+  <h3>3. 会話の動き</h3>
+  <div class="toggle">
+    <input type="checkbox" id="optAuto" checked>
+    <label for="optAuto" style="margin:0">読み上げが終わったら、相手側のマイクを自動で開く</label>
+  </div>
+  <div class="toggle">
+    <input type="checkbox" id="optSpeak" checked>
+    <label for="optSpeak" style="margin:0">翻訳を音声で読み上げる</label>
+  </div>
+  <div class="toggle">
+    <input type="checkbox" id="optWake" checked>
+    <label for="optWake" style="margin:0">使っている間は画面を消さない</label>
+  </div>
+  <label for="optRate">読み上げの速さ</label>
+  <select id="optRate">
+    <option value="0.8">ゆっくり</option>
+    <option value="1" selected>ふつう</option>
+    <option value="1.2">はやい</option>
+  </select>
+
+  <h3>4. 話し手のていねいさ（タイ語で使います）</h3>
+  <p style="font-size:13px;color:#64748b">タイ語は話す人が男性か女性かで文末の言い方が変わります。</p>
+  <select id="optGender">
+    <option value="male">男性（〜ครับ）</option>
+    <option value="female">女性（〜ค่ะ）</option>
+  </select>
+
+  <h3>5. 会話の記録</h3>
+  <p style="font-size:13px;color:#64748b">記録はこのスマホの中だけに残ります。</p>
+  <div style="display:flex; gap:8px; flex-wrap:wrap;">
+    <button class="btn gray" id="showLog">記録を見る</button>
+    <button class="btn red" id="clearLog">記録を全部消す</button>
+  </div>
+  <div class="log" id="logBox"></div>
+
+  <div class="note" style="margin-top:24px">
+    このアプリは話した内容をGoogleに送って翻訳します。<b>人が特定できる内容や、仕事の中身は話さないでください。</b>
+    道案内・手続きの説明・日常会話に使ってください。
+  </div>
+</div>
+
+<!-- ===== 定型文パネル ===== -->
+<div class="panel" id="panelPhrase">
+  <button class="close" data-close>閉じる</button>
+  <h2>定型文<span id="phraseLang" style="font-size:14px;color:#64748b"></span></h2>
+  <p style="font-size:13px;color:#64748b">押すと読み上げます。ここはインターネットがなくても使えます。定型文は言語ごとに分かれています。</p>
+  <ul class="plist" id="phraseList"></ul>
+
+  <h3>よく使う言葉を追加する</h3>
+  <p style="font-size:13px;color:#64748b">日本語で入れると、翻訳して保存します（追加のときだけ通信します）。</p>
+  <input type="text" id="newPhrase" placeholder="例：ここに名前を書いてください">
+  <div style="margin-top:10px"><button class="btn" id="addPhrase">追加する</button></div>
+</div>
+
+<script>
+/* ================== 言語の設定（ここを増やせば言語が増えます） ================== */
+const LANGS = {
+  vi: {
+    name: 'ベトナム語', flag: '🇻🇳', native: 'Tiếng Việt',
+    sr: 'vi-VN', tts: 'vi', bg: '#14532d',
+    micIdle: '🎤 Nói tiếng Việt', micOn: '⏹ Đang nghe…',
+    wait: 'Chạm micro rồi nói',
+    hint: 'ていねいで自然な話し言葉にしてください。相手の呼び方は、失礼にならない一般的な言い方にしてください。',
+    phrases: [
+      { ja: 'こんにちは',                 fo: 'Xin chào' },
+      { ja: 'ありがとうございます',        fo: 'Cảm ơn' },
+      { ja: 'すみません',                 fo: 'Xin lỗi' },
+      { ja: 'ゆっくり話してください',       fo: 'Xin hãy nói chậm lại' },
+      { ja: 'もう一度お願いします',        fo: 'Xin nhắc lại một lần nữa' },
+      { ja: '少し待ってください',          fo: 'Xin chờ một chút' },
+      { ja: 'わかりますか？',             fo: 'Bạn có hiểu không?' },
+      { ja: '大丈夫ですか？',             fo: 'Bạn có sao không?' },
+      { ja: 'こちらへどうぞ',             fo: 'Mời bạn đi lối này' },
+      { ja: 'このアプリで話しかけてください', fo: 'Xin hãy nói vào ứng dụng này' }
+    ]
+  },
+  th: {
+    name: 'タイ語', flag: '🇹🇭', native: 'ภาษาไทย',
+    sr: 'th-TH', tts: 'th', bg: '#7c2d12',
+    micIdle: '🎤 พูดภาษาไทย', micOn: '⏹ กำลังฟัง…',
+    wait: 'แตะไมโครโฟนแล้วพูด',
+    hint: 'ていねいな話し言葉にしてください。話し手は{GENDER}なので、文末の丁寧語は{PARTICLE}を使ってください。',
+    phrases: [
+      { ja: 'こんにちは',                 fo: 'สวัสดีครับ' },
+      { ja: 'ありがとうございます',        fo: 'ขอบคุณครับ' },
+      { ja: 'すみません',                 fo: 'ขอโทษครับ' },
+      { ja: 'ゆっくり話してください',       fo: 'กรุณาพูดช้าๆ ครับ' },
+      { ja: 'もう一度お願いします',        fo: 'กรุณาพูดอีกครั้งครับ' },
+      { ja: '少し待ってください',          fo: 'กรุณารอสักครู่ครับ' },
+      { ja: 'わかりますか？',             fo: 'เข้าใจไหมครับ' },
+      { ja: '大丈夫ですか？',             fo: 'เป็นอะไรไหมครับ' },
+      { ja: 'こちらへどうぞ',             fo: 'เชิญทางนี้ครับ' },
+      { ja: 'このアプリで話しかけてください', fo: 'กรุณาพูดใส่แอปนี้ครับ' }
+    ]
+  }
+};
+
+/* ================== 基本 ================== */
+const VERSION = 'v1.1';
+const MODEL = 'gemini-2.5-flash-lite';
+const K_KEY = 'tsuyaku_apikey';
+const K_OPT = 'tsuyaku_opts';
+const K_LOG = 'tsuyaku_log';
+const K_LANG = 'tsuyaku_lang';
+const phrKey = code => 'tsuyaku_phrases_' + code;
+
+document.getElementById('ver').textContent = VERSION;
+
+let LANG = localStorage.getItem(K_LANG) || 'vi';
+if (!LANGS[LANG]) LANG = 'vi';
+const L = () => LANGS[LANG];
+
+/* v1.0の定型文（ベトナム語だけ）を引き継ぐ */
+(function migrate() {
+  const old = localStorage.getItem('tsuyaku_phrases');
+  if (old && !localStorage.getItem(phrKey('vi'))) {
+    try {
+      const list = JSON.parse(old).map(p => ({ ja: p.ja, fo: p.fo || p.vi }));
+      localStorage.setItem(phrKey('vi'), JSON.stringify(list));
+    } catch (e) {}
+    localStorage.removeItem('tsuyaku_phrases');
+  }
+})();
+
+/* ================== 保存まわり ================== */
+function getKey() { return (localStorage.getItem(K_KEY) || '').trim(); }
+function getOpts() {
+  try { return Object.assign({ auto:true, speak:true, wake:true, rate:1, gender:'male' },
+        JSON.parse(localStorage.getItem(K_OPT) || '{}')); }
+  catch (e) { return { auto:true, speak:true, wake:true, rate:1, gender:'male' }; }
+}
+function setOpts(o) { localStorage.setItem(K_OPT, JSON.stringify(o)); }
+function getLog() { try { return JSON.parse(localStorage.getItem(K_LOG) || '[]'); } catch(e){ return []; } }
+function pushLog(from, src, dst) {
+  const l = getLog();
+  l.push({ t: Date.now(), lang: LANG, from, src, dst });
+  localStorage.setItem(K_LOG, JSON.stringify(l.slice(-300)));
+}
+function getPhrases(code) {
+  code = code || LANG;
+  try {
+    const s = localStorage.getItem(phrKey(code));
+    if (!s) return LANGS[code].phrases.slice();
+    return JSON.parse(s);
+  } catch (e) { return LANGS[code].phrases.slice(); }
+}
+function setPhrases(list, code) { localStorage.setItem(phrKey(code || LANG), JSON.stringify(list)); }
+
+/* ================== 画面の部品 ================== */
+const el = id => document.getElementById(id);
+const statusEl = el('status');
+const UI = {
+  ja: { heard: el('jaHeard'), shown: el('jaShown'), mic: el('jaMic'), side: el('sideJa') },
+  fo: { heard: el('foHeard'), shown: el('foShown'), mic: el('foMic'), side: el('sideFo') }
+};
+const other = s => (s === 'ja' ? 'fo' : 'ja');
+const srLang  = s => (s === 'ja' ? 'ja-JP' : L().sr);
+const ttsLang = s => (s === 'ja' ? 'ja'    : L().tts);
+
+function setStatus(t) { statusEl.textContent = t; }
+function show(side, text, waiting) {
+  UI[side].shown.textContent = text;
+  UI[side].shown.classList.toggle('waiting', !!waiting);
+}
+
+/* 言語を切り替えたときに画面の文字を入れ替える */
+function applyLang() {
+  const g = L();
+  el('foTitle').textContent = g.flag + ' ' + g.native;
+  el('langName').textContent = g.name;
+  el('sideFo').style.background = g.bg;
+  UI.fo.mic.textContent = g.micIdle;
+  UI.fo.heard.textContent = '';
+  UI.ja.heard.textContent = '';
+  show('fo', g.wait, true);
+  show('ja', 'マイクを押して話してください', true);
+  localStorage.setItem(K_LANG, LANG);
+  updateVoiceBox();
+}
+
+/* ================== 読み上げ（TTS） ================== */
+let voices = [];
+function loadVoices() {
+  voices = window.speechSynthesis ? speechSynthesis.getVoices() : [];
+  updateVoiceBox();
+  if (el('panelLang').classList.contains('open')) renderLangs();
+}
+if (window.speechSynthesis) {
+  loadVoices();
+  speechSynthesis.onvoiceschanged = loadVoices;
+}
+function pickVoice(prefix) {
+  return voices.find(v => v.lang && v.lang.toLowerCase().startsWith(prefix)) || null;
+}
+function hasVoice(prefix) { return !!pickVoice(prefix); }
+
+function updateVoiceBox() {
+  const box = el('voiceBox');
+  const warn = el('foVoiceWarn');
+  const g = L();
+  if (!window.speechSynthesis) {
+    if (box) { box.className = 'note ng'; box.textContent = 'このブラウザは読み上げに対応していません。文字だけ使えます。'; }
+    return;
+  }
+  const ok = hasVoice(g.tts);
+  if (box) {
+    box.className = ok ? 'note ok' : 'note ng';
+    box.innerHTML = ok
+      ? '✅ <b>' + g.name + '</b>の声が使えます。そのまま使えます。'
+      : '⚠️ <b>' + g.name + 'の声がこのスマホに入っていません。</b>翻訳した文字は出ますが、<b>読み上げができません。</b>下の手順で入れてください。';
+  }
+  if (warn) warn.textContent = ok ? '' : '🔇 声なし';
+}
+
+let speaking = false;
+function speak(text, side, done) {
+  const o = getOpts();
+  if (!o.speak || !window.speechSynthesis || !text) { if (done) done(); return; }
+  try { speechSynthesis.cancel(); } catch (e) {}
+  const u = new SpeechSynthesisUtterance(text);
+  const prefix = ttsLang(side);
+  const v = pickVoice(prefix);
+  if (v) u.voice = v;
+  u.lang = srLang(side);
+  u.rate = parseFloat(o.rate) || 1;
+  speaking = true;
+  const finish = () => { speaking = false; if (done) done(); };
+  u.onend = finish;
+  u.onerror = finish;
+  setTimeout(() => { if (speaking) finish(); }, Math.min(20000, 2500 + text.length * 120));
+  speechSynthesis.speak(u);
+}
+
+/* ================== 音声認識 ================== */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null;
+let listening = null;
+let wantListen = null;
+let finalText = '';
+
+function micUI(side, on) {
+  const m = UI[side].mic;
+  m.classList.toggle('on', on);
+  UI[side].side.classList.toggle('active', on);
+  if (side === 'ja') m.textContent = on ? '⏹ 聞いています…' : '🎤 日本語で話す';
+  else               m.textContent = on ? L().micOn        : L().micIdle;
+}
+
+function stopListen() {
+  wantListen = null;
+  if (rec) { try { rec.stop(); } catch (e) {} }
+  if (listening) micUI(listening, false);
+  listening = null;
+}
+
+function startListen(side) {
+  if (!SR) { setStatus('このブラウザは音声認識に使えません'); return; }
+  if (speaking) { try { speechSynthesis.cancel(); } catch(e){} speaking = false; }
+  if (listening === side) { stopListen(); setStatus('待機中'); return; }
+  if (listening) stopListen();
+
+  finalText = '';
+  UI[side].heard.textContent = '';
+  show(side, '…', true);
+
+  rec = new SR();
+  rec.lang = srLang(side);
+  rec.interimResults = true;
+  rec.continuous = false;   // Androidはどちらにせよ数秒で切れる
+  rec.maxAlternatives = 1;
+
+  rec.onstart = () => {
+    listening = side; wantListen = side;
+    micUI(side, true);
+    setStatus((side === 'ja' ? '日本語' : L().name) + 'を聞いています');
+  };
+
+  rec.onresult = (e) => {
+    let interim = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const t = e.results[i][0].transcript;
+      if (e.results[i].isFinal) finalText += t; else interim += t;
+    }
+    UI[side].heard.textContent = finalText + interim;
+  };
+
+  rec.onerror = (e) => {
+    if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+      wantListen = null;
+      setStatus('マイクが許可されていません');
+      show(side, 'マイクを許可してください', true);
+    } else if (e.error === 'language-not-supported') {
+      wantListen = null;
+      setStatus(L().name + 'の音声認識に対応していません');
+      show(side, 'この言語の聞き取りに対応していません', true);
+    } else if (e.error === 'network') {
+      wantListen = null;
+      setStatus('ネットにつながっていません');
+    }
+  };
+
+  rec.onend = () => {
+    micUI(side, false);
+    listening = null;
+    const said = finalText.trim();
+    if (said) {
+      wantListen = null;
+      translate(side, said);
+    } else if (wantListen === side) {
+      setTimeout(() => { if (wantListen === side && !speaking) startListen(side); }, 250);
+    } else {
+      setStatus('待機中');
+    }
+  };
+
+  try { rec.start(); } catch (e) { setStatus('マイクを開けませんでした'); }
+}
+
+/* ================== 翻訳 ================== */
+async function callGemini(prompt, maxTok) {
+  const key = getKey();
+  if (!key) throw new Error('NOKEY');
+  const url = 'https://generativelanguage.googleapis.com/v1beta/models/'
+            + MODEL + ':generateContent?key=' + encodeURIComponent(key);
+  const body = {
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: {
+      temperature: 0,
+      maxOutputTokens: maxTok || 1024,
+      thinkingConfig: { thinkingBudget: 0 }
+    }
+  };
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) {
+    const t = await res.text();
+    if (res.status === 400 && /API key/i.test(t)) throw new Error('BADKEY');
+    if (res.status === 404) throw new Error('MODEL');
+    if (res.status === 429) throw new Error('LIMIT');
+    throw new Error('HTTP ' + res.status);
+  }
+  const j = await res.json();
+  const parts = j && j.candidates && j.candidates[0] &&
+                j.candidates[0].content && j.candidates[0].content.parts;
+  const out = parts ? parts.map(p => p.text || '').join('').trim() : '';
+  if (!out) throw new Error('EMPTY');
+  return out;
+}
+
+function langHint() {
+  const o = getOpts();
+  return L().hint
+    .replace('{GENDER}', o.gender === 'female' ? '女性' : '男性')
+    .replace('{PARTICLE}', o.gender === 'female' ? 'ค่ะ' : 'ครับ');
+}
+
+function buildPrompt(from, text) {
+  const g = L();
+  const dir = from === 'ja'
+    ? '日本語から' + g.name + 'に訳してください。'
+    : g.name + 'から日本語に訳してください。';
+  return dir + '\n'
+    + '- 訳した文だけを返してください。説明・引用符・読み方（ローマ字）は付けないでください。\n'
+    + '- ' + langHint() + '\n'
+    + '- 意味が取れないときは、無理に訳さず「（聞き取れませんでした）」とだけ返してください。\n'
+    + '\n原文：\n' + text;
+}
+
+async function translate(from, text) {
+  const to = other(from);
+  setStatus('翻訳中…');
+  show(to, '…', true);
+  try {
+    const out = await callGemini(buildPrompt(from, text), 1024);
+    show(to, out, false);
+    pushLog(from, text, out);
+    setStatus('');
+    speak(out, to, () => {
+      if (getOpts().auto) startListen(to);
+      else setStatus('待機中');
+    });
+  } catch (e) {
+    const m = String(e.message || e);
+    let msg = '翻訳できませんでした（' + m + '）';
+    if (m === 'NOKEY')  msg = '設定からAPIキーを入れてください';
+    if (m === 'BADKEY') msg = 'APIキーが違うようです';
+    if (m === 'MODEL')  msg = 'モデル名が使えなくなっています（設定を見てください）';
+    if (m === 'LIMIT')  msg = '使いすぎです。少し待ってください';
+    if (m === 'EMPTY')  msg = '返事が空でした。もう一度話してください';
+    if (!navigator.onLine) msg = 'インターネットにつながっていません。定型文は使えます';
+    show(to, msg, true);
+    setStatus('待機中');
+  }
+}
+
+/* ================== 画面を消さない ================== */
+let wakeLock = null;
+async function keepAwake(on) {
+  try {
+    if (on && 'wakeLock' in navigator) {
+      if (!wakeLock) wakeLock = await navigator.wakeLock.request('screen');
+    } else if (wakeLock) { await wakeLock.release(); wakeLock = null; }
+  } catch (e) {}
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && getOpts().wake) keepAwake(true);
+});
+
+/* ================== ボタン ================== */
+el('jaMic').onclick = () => startListen('ja');
+el('foMic').onclick = () => startListen('fo');
+el('jaReplay').onclick = () => speak(UI.ja.shown.textContent, 'ja');
+el('foReplay').onclick = () => speak(UI.fo.shown.textContent, 'fo');
+
+function openPanel(p) { stopListen(); p.classList.add('open'); }
+document.querySelectorAll('[data-close]').forEach(b => {
+  b.onclick = () => b.closest('.panel').classList.remove('open');
+});
+el('btnSet').onclick    = () => { fillSettings(); openPanel(el('panelSet')); };
+el('jaPhrase').onclick  = () => { renderPhrases(); openPanel(el('panelPhrase')); };
+el('btnLang').onclick   = () => { renderLangs();   openPanel(el('panelLang')); };
+
+/* ===== 言語えらび ===== */
+function renderLangs() {
+  el('langList').innerHTML = Object.keys(LANGS).map(code => {
+    const g = LANGS[code];
+    const v = hasVoice(g.tts) ? '🔊' : '🔇';
+    return '<button class="langbtn' + (code === LANG ? ' sel' : '') + '" data-lang="' + code + '">'
+      + '<span class="fl">' + g.flag + '</span>'
+      + '<span><span class="nm">' + g.name + '</span><br><span class="nt">' + g.native + '</span></span>'
+      + '<span class="vc">' + v + '</span></button>';
+  }).join('');
+  el('langList').querySelectorAll('[data-lang]').forEach(b => {
+    b.onclick = () => {
+      LANG = b.dataset.lang;
+      applyLang();
+      el('panelLang').classList.remove('open');
+      setStatus(L().name + 'に切り替えました');
+    };
+  });
+}
+
+/* ===== 設定 ===== */
+function fillSettings() {
+  el('apiKey').value = getKey();
+  const o = getOpts();
+  el('optAuto').checked  = !!o.auto;
+  el('optSpeak').checked = !!o.speak;
+  el('optWake').checked  = !!o.wake;
+  el('optRate').value    = String(o.rate);
+  el('optGender').value  = o.gender || 'male';
+  updateVoiceBox();
+}
+el('saveKey').onclick = () => {
+  localStorage.setItem(K_KEY, el('apiKey').value.trim());
+  setStatus('キーを保存しました');
+  alert('保存しました');
+};
+el('testKey').onclick = async () => {
+  localStorage.setItem(K_KEY, el('apiKey').value.trim());
+  try {
+    const r = await callGemini(buildPrompt('ja', 'こんにちは'), 64);
+    alert('つながりました。\n\nこんにちは → ' + r);
+  } catch (e) {
+    alert('つながりませんでした：' + e.message);
+  }
+};
+el('testVoice').onclick = () => {
+  const g = L();
+  if (!hasVoice(g.tts)) { alert(g.name + 'の声が入っていません。下の手順で入れてください。'); return; }
+  const list = getPhrases();
+  speak((list[0] && list[0].fo) || g.native, 'fo');
+};
+['optAuto','optSpeak','optWake'].forEach(id => {
+  el(id).onchange = () => {
+    const o = getOpts();
+    o[id.replace('opt','').toLowerCase()] = el(id).checked;
+    setOpts(o);
+    if (id === 'optWake') keepAwake(el(id).checked);
+  };
+});
+el('optRate').onchange   = () => { const o = getOpts(); o.rate = parseFloat(el('optRate').value); setOpts(o); };
+el('optGender').onchange = () => { const o = getOpts(); o.gender = el('optGender').value; setOpts(o); };
+
+el('showLog').onclick = () => {
+  const l = getLog().slice().reverse();
+  const box = el('logBox');
+  if (!l.length) { box.innerHTML = '<p style="font-size:13px;color:#64748b">記録はまだありません。</p>'; return; }
+  box.innerHTML = l.map(x => {
+    const d = new Date(x.t);
+    const time = d.toLocaleString('ja-JP', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+    const nm = (LANGS[x.lang] && LANGS[x.lang].name) || '相手';
+    const dir = x.from === 'ja' ? '日本語→' + nm : nm + '→日本語';
+    return '<div><div class="l">' + time + '　' + dir + '</div>'
+         + esc(x.src) + '<br>→ ' + esc(x.dst) + '</div>';
+  }).join('');
+};
+el('clearLog').onclick = () => {
+  if (confirm('会話の記録を全部消します。よろしいですか？')) {
+    localStorage.removeItem(K_LOG);
+    el('logBox').innerHTML = '';
+    alert('消しました');
+  }
+};
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c =>
+    ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+}
+
+/* ===== 定型文 ===== */
+function renderPhrases() {
+  el('phraseLang').textContent = '（' + L().name + '）';
+  const list = getPhrases();
+  el('phraseList').innerHTML = list.map((p, i) =>
+    '<li><div class="txt"><div class="p-ja">' + esc(p.ja) + '</div>'
+    + '<div class="p-fo">' + esc(p.fo) + '</div></div>'
+    + '<button data-say="' + i + '">🔊</button>'
+    + '<button class="del" data-del="' + i + '">✕</button></li>'
+  ).join('');
+  el('phraseList').querySelectorAll('[data-say]').forEach(b => {
+    b.onclick = () => {
+      const p = getPhrases()[+b.dataset.say];
+      show('fo', p.fo, false);
+      show('ja', p.ja, false);
+      speak(p.fo, 'fo');
+    };
+  });
+  el('phraseList').querySelectorAll('[data-del]').forEach(b => {
+    b.onclick = () => {
+      const list = getPhrases();
+      if (confirm('「' + list[+b.dataset.del].ja + '」を消しますか？')) {
+        list.splice(+b.dataset.del, 1); setPhrases(list); renderPhrases();
+      }
+    };
+  });
+}
+el('addPhrase').onclick = async () => {
+  const ja = el('newPhrase').value.trim();
+  if (!ja) return;
+  const btn = el('addPhrase');
+  btn.disabled = true; btn.textContent = '翻訳中…';
+  try {
+    const fo = await callGemini(buildPrompt('ja', ja), 256);
+    const list = getPhrases();
+    list.push({ ja, fo });
+    setPhrases(list);
+    el('newPhrase').value = '';
+    renderPhrases();
+  } catch (e) {
+    alert('翻訳できませんでした：' + e.message);
+  }
+  btn.disabled = false; btn.textContent = '追加する';
+};
+
+/* ================== 起動時 ================== */
+(function init() {
+  applyLang();
+  if (!SR) {
+    setStatus('音声認識が使えません（Chromeで開いてください）');
+  } else if (!getKey()) {
+    setStatus('まず設定からAPIキーを入れてください');
+  } else {
+    setStatus('待機中　マイクを押して話してください');
+  }
+  if (getOpts().wake) keepAwake(true);
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
+})();
+</script>
+</body>
+</html>
