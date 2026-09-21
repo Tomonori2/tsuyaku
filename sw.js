@@ -2,7 +2,7 @@
    役割：アプリ本体をスマホに保存して、次回から一瞬で開けるようにする。
    注意：翻訳はインターネットが要るので、そこは保存しない。 */
 
-const CACHE = 'tsuyaku-v1.3';
+const CACHE = 'tsuyaku-v1.4';
 const FILES = [
   './',
   './index.html',

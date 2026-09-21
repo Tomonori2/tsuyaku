@@ -311,8 +311,10 @@ const LANGS = {
 };
 
 /* ================== 基本 ================== */
-const VERSION = 'v1.3';
-const MODEL = 'gemini-2.5-flash-lite';
+const VERSION = 'v1.4';
+// 上から順に使う。1つ目が回数制限（429）で止まったら、2つ目で続ける。
+// モデルごとに回数の枠が別なので、会話が途切れにくくなる。
+const MODELS = ['gemini-2.5-flash-lite', 'gemini-2.5-flash'];
 const K_KEY = 'tsuyaku_apikey';
 const K_OPT = 'tsuyaku_opts';
 const K_LOG = 'tsuyaku_log';
@@ -532,11 +534,16 @@ function startListen(side) {
 }
 
 /* ================== 翻訳 ================== */
-async function callGemini(prompt, maxTok) {
-  const key = getKey();
-  if (!key) throw new Error('NOKEY');
+// 回数制限のとき、Googleは「あと何秒待てばよいか」を返してくることがある（例 "retryDelay": "23s"）
+let limitWait = 0;
+function readRetrySec(t) {
+  const m = /"retryDelay"\s*:\s*"(\d+)(?:\.\d+)?s"/.exec(t);
+  return m ? Number(m[1]) : 0;
+}
+
+async function callGeminiOnce(model, key, prompt, maxTok) {
   const url = 'https://generativelanguage.googleapis.com/v1beta/models/'
-            + MODEL + ':generateContent?key=' + encodeURIComponent(key);
+            + model + ':generateContent?key=' + encodeURIComponent(key);
   const body = {
     contents: [{ parts: [{ text: prompt }] }],
     generationConfig: {
@@ -554,7 +561,8 @@ async function callGemini(prompt, maxTok) {
     const t = await res.text();
     if (res.status === 400 && /API key/i.test(t)) throw new Error('BADKEY');
     if (res.status === 404) throw new Error('MODEL');
-    if (res.status === 429) throw new Error('LIMIT');
+    if (res.status === 429) { limitWait = Math.max(limitWait, readRetrySec(t)); throw new Error('LIMIT'); }
+    if (res.status === 503) throw new Error('BUSY');
     throw new Error('HTTP ' + res.status);
   }
   const j = await res.json();
@@ -563,6 +571,24 @@ async function callGemini(prompt, maxTok) {
   const out = parts ? parts.map(p => p.text || '').join('').trim() : '';
   if (!out) throw new Error('EMPTY');
   return out;
+}
+
+// 1つ目のモデルが「回数制限・混雑・提供終了」なら、次のモデルで試す。
+// キーの間違いや空の返事は、モデルを変えても同じなのでそのまま返す。
+async function callGemini(prompt, maxTok) {
+  const key = getKey();
+  if (!key) throw new Error('NOKEY');
+  limitWait = 0;
+  let last = null;
+  for (const model of MODELS) {
+    try {
+      return await callGeminiOnce(model, key, prompt, maxTok);
+    } catch (e) {
+      last = e;
+      if (!['LIMIT', 'BUSY', 'MODEL'].includes(e.message)) throw e;
+    }
+  }
+  throw last;
 }
 
 function langHint() {
@@ -603,10 +629,16 @@ async function translate(from, text) {
     if (m === 'NOKEY')  msg = '設定からAPIキーを入れてください';
     if (m === 'BADKEY') msg = 'APIキーが違うようです';
     if (m === 'MODEL')  msg = 'モデル名が使えなくなっています（設定を見てください）';
-    if (m === 'LIMIT')  msg = '使いすぎです。少し待ってください';
+    if (m === 'LIMIT')  msg = limitWait
+      ? '無料の回数を使い切りました。あと約' + limitWait + '秒で使えます'
+      : '無料の回数を使い切りました。1分ほど待ってからもう一度話してください';
+    if (m === 'BUSY')   msg = 'AIが混み合っています。少ししてからもう一度話してください';
     if (m === 'EMPTY')  msg = '返事が空でした。もう一度話してください';
     if (!navigator.onLine) msg = 'インターネットにつながっていません。定型文は使えます';
-    show(to, msg, true);
+    // エラーは日本語なので、日本語側（下半分）に出す。
+    // 相手側（上半分・逆さま）に出すと、持ち主が逆さの文字を読むことになるため。
+    show('ja', msg, true);
+    if (to !== 'ja') show(to, '⚠️', true);
     setStatus('待機中');
   }
 }
